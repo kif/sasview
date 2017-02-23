@@ -48,7 +48,6 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         self.assertEqual(self.widget.windowTitle(), "Generic SAS Calculator")
 
         self.assertIn('trigger_plot_3d', dir(self.widget))
-        self.assertIn('trigger_plot1_2d', dir(self.widget))
 
         # Buttons
         self.assertEqual(self.widget.txtData.text(), "Default SLD Profile")
@@ -101,7 +100,6 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         self.assertFalse(self.widget.cmdSave.isEnabled())
         self.assertFalse(self.widget.cmdDraw.isEnabled())
         self.assertFalse(self.widget.cmdDrawpoints.isEnabled())
-        # TODO test undo/redo
 
     def testHelpButton(self):
         """ Assure help file is shown """
@@ -231,13 +229,13 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         self.assertTrue(self.widget.sld_data.is_data)
 
         # self.assertTrue(self.widget.trigger_plot_3d)
-        # access to logging info??
+
 
     def testLoadedPDBButton(self):
         """
         Load pdb data and check modifications of GUI
         """
-        filename = "../../../sasview/test/upcoming_formats/dna.pdb"
+        filename = "diamdsml.pdb"
         QtGui.QFileDialog.getOpenFileName = MagicMock(return_value=filename)
         self.widget.loadFile()
 
@@ -246,9 +244,10 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
 
         time.sleep(1)
         # check updated values in ui, read from loaded file
-        self.assertEqual(self.widget.txtData.text(), 'dna.pdb')
-        self.assertEqual(self.widget.txtTotalVolume.text(), '11326.1986288')
-        self.assertEqual(self.widget.txtNoPixels.text(), '486')
+        # TODO to be changed
+        self.assertEqual(self.widget.txtData.text(), 'diamdsml.pdb')
+        self.assertEqual(self.widget.txtTotalVolume.text(), '170.950584161')
+        self.assertEqual(self.widget.txtNoPixels.text(), '18')
 
         # check disabled TextEdits according to data format
         self.assertFalse(self.widget.txtUpFracIn.isEnabled())
@@ -275,7 +274,7 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         self.assertFalse(self.widget.txtMz.isEnabled())
         self.assertEqual(self.widget.txtMz.text(), '0')
         self.assertFalse(self.widget.txtNucl.isEnabled())
-        self.assertEqual(self.widget.txtNucl.text(), '4.757e-06')
+        self.assertEqual(self.widget.txtNucl.text(), '7.0003e-06')
 
         self.assertFalse(self.widget.txtXnodes.isEnabled())
         self.assertEqual(self.widget.txtXnodes.text(), 'NaN')
@@ -364,15 +363,18 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         Test compute button
         """
         # load data
-        filename = "../../../sasview/test/upcoming_formats/dna.pdb"
+        filename = "diamdsml.pdb"
         QtGui.QFileDialog.getOpenFileName = MagicMock(return_value=filename)
         self.widget.loadFile()
         time.sleep(1)
         QTest.mouseClick(self.widget.cmdCompute, Qt.LeftButton)
         # check modification of text of Compute button
         self.assertEqual(self.widget.cmdCompute.text(), 'Wait...')
-        time.sleep(0.5)
+        self.assertFalse(self.widget.cmdCompute.isEnabled())
+
+        self.widget.complete([numpy.ones(1), numpy.zeros(1), numpy.zeros(1)], update=None)
         self.assertEqual(self.widget.cmdCompute.text(), 'Compute')
+        self.assertTrue(self.widget.cmdCompute.isEnabled())
 
     # TODO
     def testDrawButton(self):
@@ -380,7 +382,8 @@ class GenericScatteringCalculatorTest(unittest.TestCase):
         Test Draw buttons for 3D plots with and without arrows
         """
         self.assertFalse(self.widget.cmdDraw.isEnabled())
-        filename = "../../../sasview/test/upcoming_formats/dna.pdb"
+        # filename = "../../../sasview/test/upcoming_formats/dna.pdb"
+        filename = "diamdsml.pdb"
         QtGui.QFileDialog.getOpenFileName = MagicMock(return_value=filename)
         self.widget.loadFile()
         self.assertEqual(self.widget.cmdLoad.text(), 'Loading...')

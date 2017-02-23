@@ -1,15 +1,16 @@
-from PyQt4 import QtGui
-from PyQt4 import QtCore
-
 import sys
 import os
 import numpy
 import logging
 import time
+
+from PyQt4 import QtGui
+from PyQt4 import QtCore
+from twisted.internet import threads
+
 import sas.qtgui.GuiUtils as GuiUtils
 
 from sas.sasgui.perspectives.calculator.load_thread import GenReader
-from sas.sascalc.data_util.calcthread import CalcThread
 from sas.sascalc.dataloader.data_info import Detector
 from sas.sascalc.dataloader.data_info import Source
 from sas.sascalc.calculator import sas_gen
@@ -17,9 +18,9 @@ from sas.sascalc.calculator import sas_gen
 from mpl_toolkits.mplot3d import Axes3D
 from sas.qtgui.PlotterBase import PlotterBase
 from sas.sasgui.guiframe.dataFitting import Data2D
-from sas.qtgui.Plotter2D import Plotter2DWidget, Plotter2D
+from sas.qtgui.Plotter2D import Plotter2D
 from sas.sasgui.guiframe.dataFitting import Data1D
-from sas.qtgui.Plotter import PlotterWidget, Plotter
+from sas.qtgui.Plotter import Plotter
 from sas.sasgui.plottools.arrow3d import Arrow3D
 
 # Local UI
@@ -28,30 +29,9 @@ from UI.GenericScatteringCalculator import Ui_GenericScatteringCalculator
 _Q1D_MIN = 0.001
 
 
-# Class copied from old gui
-class CalcGen(CalcThread):
-    """
-    Computation
-    """
-    def __init__(self, id=-1, input=None, completefn=None, updatefn=None,
-                 yieldtime=0.01, worktime=0.01):
-        CalcThread.__init__(self, completefn, updatefn, yieldtime, worktime)
-        self.starttime = 0
-        self.id = id
-        self.input = input
-        self.update_fn = updatefn
-
-    def compute(self):
-        """
-        executing computation
-        """
-        self.complete(input=self.input, update=self.update_fn)
-
-
 class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator):
 
     trigger_plot_3d = QtCore.pyqtSignal()
-    trigger_plot1_2d = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super(GenericScatteringCalculator, self).__init__()
@@ -78,7 +58,7 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         self.cbOptionsCalc.setVisible(False)
 
         # push buttons
-        self.cmdClose.clicked.connect(self.onClose)
+        self.cmdClose.clicked.connect(self.accept)
         self.cmdHelp.clicked.connect(self.onHelp)
 
         self.cmdLoad.clicked.connect(self.loadFile)
@@ -88,18 +68,6 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
 
         self.cmdDraw.clicked.connect(lambda: self.plot3d(has_arrow=True))
         self.cmdDrawpoints.clicked.connect(lambda: self.plot3d(has_arrow=False))
-
-        # Enable undo/redo for TextEdits
-        list_edit_text = [self.txtData, self.txtBackground, self.txtScale,
-                          self.txtSolventSLD, self.txtTotalVolume,
-                          self.txtUpTheta, self.txtNoQBins, self.txtQxMax,
-                          self.txtMx, self.txtMy, self.txtMz, self.txtNucl,
-                          self.txtXnodes, self.txtYnodes, self.txtZnodes,
-                          self.txtXstepsize, self.txtYstepsize,
-                          self.txtZstepsize]
-        for item in list_edit_text:
-            item.isUndoAvailable()
-            item.isRedoAvailable()
 
         # validators
         # scale, volume and background must be positive
@@ -129,9 +97,9 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
                                                             self.txtNoQBins))
         self.txtNoQBins.textChanged.connect(self.check_value)
 
-        # plots - 3D in real space, 1D or 2D in reciprocal space
+        # plots - 3D in real space
         self.trigger_plot_3d.connect(lambda: self.plot3d(has_arrow=False))
-        self.trigger_plot1_2d.connect(self.plot_1_2d)
+
         self.graph_num = 1  # index for name of graph
 
         # TODO the option Ellipsoid has not been implemented
@@ -145,7 +113,6 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         self.communicator.statusBarUpdateSignal.emit(
             "The option Ellipsoid has not been implemented yet.")
 
-# Load
     def loadFile(self):
         """
         Open menu to choose the datafile to load
@@ -153,10 +120,10 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         """
         try:
             self.datafile = QtGui.QFileDialog.getOpenFileName(
-                self, "Choose a file", "", "Files *.txt *.TXT *.OMF *.omf "
-                                           "*.SLD *.sld *.pdb *.PDB "
-                                           "(*.txt *.TXT *.OMF *.omf *.SLD "
-                                           "*.sld *.pdb *.PDB)")
+                self, "Choose a file", "", "All Gen files (*.txt *.TXT *.OMF *.omf) ;;"
+                                          "SLD files (*.SLD *.sld);;PDB files (*.pdb *.PDB);; "
+                                          "TXT files (*.txt *.TXT);;OMF files (*.OMF *.omf);; "
+                                          "All files (*.*)")
             if self.datafile:
                 self.default_shape = str(self.cbShape.currentText())
                 self.file_name = os.path.basename(str(self.datafile))
@@ -268,14 +235,14 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
                         'background-color: rgb(255, 182, 193);'))
                 else:
                     text_edit.setStyleSheet(QtCore.QString.fromUtf8(
-                        'background-color: rgb(255, 182, 193);'))
+                        'background-color: rgb(255, 255, 255);'))
             elif text_edit == self.txtNoQBins:
                 if value < 2 or value > 1000:
                     self.txtNoQBins.setStyleSheet(QtCore.QString.fromUtf8(
                         'background-color: rgb(255, 182, 193);'))
                 else:
                     self.txtNoQBins.setStyleSheet(QtCore.QString.fromUtf8(
-                        'background-color: rgb(255, 182, 193);'))
+                        'background-color: rgb(255, 255, 255);'))
 
     def update_gui(self):
         """ Update the interface with values from loaded data """
@@ -417,48 +384,10 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             # No manager defined - testing and standalone runs
             pass
 
-    def onClose(self):
-        """ Close the window containing this panel """
-        self.close()
-
-    def closeEvent(self, event):
-        """ Function to reset interface when closing window """
-        self.onReset()
-        self.txtData.setText('Default SLD Profile')
-        self.cbOptionsCalc.setCurrentIndex(0)
-        self.cbShape.setCurrentIndex(0)
-        self.cbShape.setEnabled(True)
-
-        self.cmdLoad.setText('Load')
-        self.cmdLoad.setEnabled(True)
-
-        # disable push buttons
-        self.cmdDraw.setEnabled(False)
-        self.cmdDrawpoints.setEnabled(False)
-        self.cmdSave.setEnabled(False)
-
-        # Enable text edits
-        self.txtMx.setEnabled(True)
-        self.txtMy.setEnabled(True)
-        self.txtMz.setEnabled(True)
-        self.txtNucl.setEnabled(True)
-        self.txtNucl.setEnabled(True)
-        self.txtXnodes.setEnabled(True)
-        self.txtYnodes.setEnabled(True)
-        self.txtZnodes.setEnabled(True)
-        self.txtXstepsize.setEnabled(True)
-        self.txtYstepsize.setEnabled(True)
-        self.txtZstepsize.setEnabled(True)
-        self.cbOptionsCalc.setVisible(False)
-
-        # graph number
-        self.graph_num = 1
-
-        event.accept()
-
     def onReset(self):
         """ Reset the inputs of textEdit to default values """
         try:
+            # reset values in textedits
             self.txtUpFracIn.setText("1.0")
             self.txtUpFracOut.setText("1.0")
             self.txtUpTheta.setText("0.0")
@@ -479,10 +408,25 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             self.txtXstepsize.setText("6")
             self.txtYstepsize.setText("6")
             self.txtZstepsize.setText("6")
+            # reset Load button and textedit
+            self.txtData.setText('Default SLD Profile')
+            self.cmdLoad.setEnabled(True)
+            self.cmdLoad.setText('Load')
+            # reset option for calculation
+            self.cbOptionsCalc.setCurrentIndex(0)
+            self.cbOptionsCalc.setVisible(False)
+            # reset shape button
+            self.cbShape.setCurrentIndex(0)
+            self.cbShape.setEnabled(True)
+            # reset compute button
+            self.cmdCompute.setText('Compute')
+            self.cmdCompute.setEnabled(True)
+            # TODO reload default data set
+            self._create_default_sld_data()
+
         finally:
             pass
 
-# Compute
     def _create_default_2d_data(self):
         """
         Copied from previous version
@@ -536,6 +480,20 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         self.data.ymin = ymin
         self.data.ymax = ymax
 
+    def _create_default_sld_data(self):
+        """
+        Copied from previous version
+        Making default sld-data
+        """
+        sld_n_default = 6.97e-06  # what is this number??
+        omfdata = sas_gen.OMFData()
+        omf2sld = sas_gen.OMF2SLD()
+        omf2sld.set_data(omfdata, self.default_shape)
+        self.sld_data = omf2sld.output
+        self.sld_data.is_data = False
+        self.sld_data.filename = "Default SLD Profile"
+        self.sld_data.set_sldn(sld_n_default)
+
     def _create_default_1d_data(self):
         """
         Copied from previous version
@@ -567,6 +525,9 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         Copied from previous version
         Execute the computation of I(qx, qy)
         """
+        # Set default data when nothing loaded yet
+        if self.sld_data is None:
+            self._create_default_sld_data()
         try:
             self.model.set_sld_data(self.sld_data)
             self.write_new_values_from_gui()
@@ -580,16 +541,18 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
                 inputs = [self.data.qx_data, self.data.qy_data, i_out]
             logging.info("Computation is in progress...")
             self.cmdCompute.setText('Wait...')
-            cal_out = CalcGen(input=inputs, completefn=self.complete,
-                              updatefn=self._update)
-            cal_out.queue()
+            self.cmdCompute.setEnabled(False)
+            d = threads.deferToThread(self.complete, inputs, self._update)
+            # Add deferred callback for call return
+            d.addCallback(self.plot_1_2d)
         except:
             log_msg = "{}. stop".format(sys.exc_value)
             logging.info(log_msg)
+        return
 
-    def _update(self):
+    def _update(self, value):
         """
-        Copied from previous version (Update the progress bar)
+        Copied from previous version
         """
         pass
 
@@ -602,31 +565,35 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
         for ind in range(len(input[0])):
             if self.is_avg:
                 if ind % 1 == 0 and update is not None:
-                    update()
+                    # update()
+                    percentage = int(100.0 * float(ind) / len(input[0]))
+                    update(percentage)
                     time.sleep(0.001)  # 0.1
                 inputi = [input[0][ind:ind + 1], [], input[2][ind:ind + 1]]
                 outi = self.model.run(inputi)
                 out = numpy.append(out, outi)
             else:
                 if ind % 50 == 0 and update is not None:
-                    update()
+                    percentage = int(100.0 * float(ind) / len(input[0]))
+                    update(percentage)
                     time.sleep(0.001)
                 inputi = [input[0][ind:ind + 1], input[1][ind:ind + 1],
                           input[2][ind:ind + 1]]
                 outi = self.model.runXY(inputi)
                 out = numpy.append(out, outi)
         self.data_to_plot = out
-        self.trigger_plot1_2d.emit()
-        logging.info('Gen computation completed.\n stop')
+        logging.info('Gen computation completed.')
         self.cmdCompute.setText('Compute')
+        self.cmdCompute.setEnabled(True)
+        return
 
-# Save
     def onSaveFile(self):
         """Save data as .sld file"""
         path = os.path.dirname(str(self.datafile))
+        default_name = os.path.join(path, 'sld_file')
         kwargs = {
             'parent': self,
-            'directory': path,
+            'directory': default_name,
             'filter': 'SLD file (*.sld)',
             'options': QtGui.QFileDialog.DontUseNativeDialog}
         # Query user for filename.
@@ -641,7 +608,6 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             except:
                 raise
 
-# Plots
     def plot3d(self, has_arrow=False):
         """ Generate 3D plot in real space with or without arrows """
         self.write_new_values_from_gui()
@@ -651,14 +617,11 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             graph_title += ' - Magnetic Vector as Arrow'
 
         plot3D = Plotter3D(self, graph_title)
-        # print self.sld_data, help(self.sld_data)
-        # print type(self.sld_data)
-        # print self.sld_data.pos_x
         plot3D.plot(self.sld_data, has_arrow=has_arrow)
         plot3D.show()
         self.graph_num += 1
 
-    def plot_1_2d(self):
+    def plot_1_2d(self, d):
         """ Generate 1D or 2D plot, called in Compute"""
         if self.is_avg or self.is_avg is None:
             data = Data1D(x=self.data.x, y=self.data_to_plot)
@@ -672,6 +635,7 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             self.graph_num += 1
             # TODO
             print 'TRANSFER OF DATA TO MAIN PANEL TO BE IMPLEMENTED'
+            return plot1D
         else:
             numpy.nan_to_num(self.data_to_plot)
             data = Data2D(image=self.data_to_plot,
@@ -689,6 +653,7 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
             self.graph_num += 1
             # TODO
             print 'TRANSFER OF DATA TO MAIN PANEL TO BE IMPLEMENTED'
+            return plot2D
 
 
 class Plotter3DWidget(PlotterBase):
@@ -839,17 +804,12 @@ class Plotter3DWidget(PlotterBase):
                 logging.info(log_msg)
             log_msg = "Arrow Drawing is in progress..."
             logging.info(log_msg)
-            draw_out = CalcGen(input=ax, completefn=_draw_arrow,
-                               updatefn=self._update)
-            draw_out.queue()
+
+            # Defer the drawing of arrows to another thread
+            d = threads.deferToThread(_draw_arrow, ax)
+
         self.figure.canvas.resizing = False
         self.figure.canvas.draw()
-
-    def _update(self):
-        """
-        Update the progress bar
-        """
-        logging.info("Progress.\n Please wait. Plotting... ")
 
 
 class Plotter3D(QtGui.QDialog, Plotter3DWidget):
@@ -858,7 +818,3 @@ class Plotter3D(QtGui.QDialog, Plotter3DWidget):
         QtGui.QDialog.__init__(self)
         Plotter3DWidget.__init__(self, manager=parent)
         self.setWindowTitle(self.graph_title)
-        icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(":/res/ball.ico"), QtGui.QIcon.Normal,
-                       QtGui.QIcon.Off)
-        self.setWindowIcon(icon)
