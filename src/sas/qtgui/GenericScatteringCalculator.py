@@ -116,13 +116,13 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
     def loadFile(self):
         """
         Open menu to choose the datafile to load
-        Only extensions .TXT, .SLD, .PDB, .OMF, .txt, .sld, .pdb, .omf
+        Only extensions .SLD, .PDB, .OMF, .sld, .pdb, .omf
         """
         try:
             self.datafile = QtGui.QFileDialog.getOpenFileName(
-                self, "Choose a file", "", "All Gen files (*.txt *.TXT *.OMF *.omf) ;;"
+                self, "Choose a file", "", "All Gen files (*.OMF *.omf) ;;"
                                           "SLD files (*.SLD *.sld);;PDB files (*.pdb *.PDB);; "
-                                          "TXT files (*.txt *.TXT);;OMF files (*.OMF *.omf);; "
+                                          "OMF files (*.OMF *.omf);; "
                                           "All files (*.*)")
             if self.datafile:
                 self.default_shape = str(self.cbShape.currentText())
@@ -154,7 +154,7 @@ class GenericScatteringCalculator(QtGui.QDialog, Ui_GenericScatteringCalculator)
                                         completefn=self.complete_loading,
                                         updatefn=self.load_update)
                 self.reader.queue()
-        except IOError:
+        except (RuntimeError, IOError):
             log_msg = "Generic SAS Calculator: %s" % sys.exc_value
             logging.info(log_msg)
             raise

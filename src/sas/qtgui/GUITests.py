@@ -26,6 +26,7 @@ from UnitTesting import ColorMapTest
 from UnitTesting import BoxSumTest
 from UnitTesting import SlicerModelTest
 from UnitTesting import SlicerParametersTest
+from UnitTesting import GenericScatteringCalculatorTest
 
 def suite():
     suites = (
@@ -55,6 +56,7 @@ def suite():
         unittest.makeSuite(BoxSumTest.BoxSumTest, 'test'),
         unittest.makeSuite(SlicerModelTest.SlicerModelTest, 'test'),
         unittest.makeSuite(SlicerParametersTest.SlicerParametersTest, 'test'),
+        unittest.makeSuite(GenericScatteringCalculatorTest.GenericScatteringCalculatorTest, 'test'),
     )
     return unittest.TestSuite(suites)
 
