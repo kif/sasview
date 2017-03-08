@@ -333,17 +333,17 @@ class Plugin(PluginBase):
                 for uid, page in self.fit_panel.opened_pages.iteritems():
                     if hasattr(page, "formfactorbox"):
                         page.model_list_box = temp
-                        current_val = page.formfactorbox.GetLabel()
+                        current_val = page.formfactorbox.GetValue()
                         #if page.plugin_rbutton.GetValue():
                         mod_cat = page.categorybox.GetStringSelection()
                         if mod_cat == custom_model:
                             #pos = page.formfactorbox.GetSelection()
                             page._show_combox_helper()
-                            new_val = page.formfactorbox.GetLabel()
+                            new_val = page.formfactorbox.GetValue()
                             if current_val != new_val and new_val != '':
-                                page.formfactorbox.SetLabel(new_val)
+                                page.formfactorbox.SetValue(new_val)
                             else:
-                                page.formfactorbox.SetLabel(current_val)
+                                page.formfactorbox.SetValue(current_val)
         except:
             logging.error("update_custom_combo: %s", sys.exc_value)
 
